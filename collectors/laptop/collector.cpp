@@ -1,18 +1,35 @@
+#include "proc_utils.h"
+#include "config_utils.h"
+#include "x11_utils.h"
 #include <iostream>
-#include <curl/curl.h>
-#include <sqlite3.h>
+#include <fstream>
+#include <chrono>
+#include <thread>
+#include <ctime>
 
 int main() {
-    std::cout << "Synq Collector Build Test\n";
-    CURL *curl = curl_easy_init();
-    if (curl) {
-        std::cout << "libcurl OK\n";
-        curl_easy_cleanup(curl);
-    }
-    sqlite3 *db;
-    if (sqlite3_open(":memory:", &db) == SQLITE_OK) {
-        std::cout << "SQLite OK\n";
-        sqlite3_close(db);
-    }
+    // std::ofstream log("build/logs/process_sample.log");
+    // if (!log.is_open()) {
+    //     std::cerr << "Could not open log file!\n";
+    //     return 1;
+    // }
+
+    // int interval = readInterval("collectors/laptop/config.ini");
+    // std::cout << "Sampling interval: " << interval << " seconds\n";
+    // while (true) {
+    //     auto list = getProcessList();
+    //     std::time_t now = std::time(nullptr);
+    //     log << "SAMPLE @ " << std::ctime(&now) << "\n";
+    //     for (auto& p : list)
+    //         log << p.pid << " " << p.name << " " << p.memoryKB << " KB\n";
+    //     log.flush();
+
+    //     std::cout << "Captured " << list.size() << " processes\n";
+    //     std::this_thread::sleep_for(std::chrono::seconds(interval));
+    // }
+
+    // return 0;
+
+    std::cout << "Active Window: " << getActiveWindowTitle() << "\n";
     return 0;
 }

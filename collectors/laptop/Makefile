@@ -3,7 +3,7 @@ CXXFLAGS = -Wall -O2
 LIBS = -lcurl -lsqlite3 -lX11
 
 all: collector
-collector: collector.cpp proc_utils.cpp net_utils.cpp
+collector: collector.cpp proc_utils.cpp net_utils.cpp config_utils.cpp x11_utils.cpp
 	$(CXX) $(CXXFLAGS) -o ../../build/binaries/collector $^ $(LIBS)
 
 clean:
