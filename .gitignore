@@ -35,3 +35,6 @@ build/
 __pycache__/
 *.py[cod]
 
+# virtual environments
+venv/
+*__pycache__/*
