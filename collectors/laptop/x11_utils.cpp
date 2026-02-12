@@ -76,7 +76,7 @@ std::string getActiveWindowTitle() {
             title = reinterpret_cast<char*>(data);
             XFree(data);
         }
-    }
+    }       
 
     XCloseDisplay(d);
     return title;

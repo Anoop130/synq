@@ -5,16 +5,16 @@ app = Flask(__name__)
 
 @app.route("/collect", methods=["POST"])
 def collect():
-    data = request.get_json(force=True)
-    if not data:
-        return jsonify({"error": "No JSON received"}), 400
-
+    data = request.get_json()
     device = data.get("device", "unknown")
-    timestamp = data.get("timestamp", "")
-    active_window = data.get("active_window", "")
 
-    insert_sample(device, timestamp, active_window)
-    return jsonify({"status": "ok", "message": "sample recorded"}), 200
+    if "usage" in data:
+        for u in data["usage"]:
+            insert_sample(device, data["timestamp"], u["app"], u["seconds"])
+    else:
+        insert_sample(device, data["timestamp"], data["active_window"], 5)
+    return jsonify({"status": "ok"})
+
 
 @app.route("/view", methods=["GET"])
 def view():
