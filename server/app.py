@@ -18,11 +18,9 @@ def collect():
 
 @app.route("/view", methods=["GET"])
 def view():
-    import sqlite3
-    conn = sqlite3.connect("server/data.db")
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM samples ORDER BY id DESC LIMIT 10").fetchall()
-    conn.close()
+    db = get_db()
+    rows = db.execute("SELECT * FROM samples ORDER BY id DESC LIMIT 10").fetchall()
+    db.close()
     return jsonify([dict(row) for row in rows])
 
 
