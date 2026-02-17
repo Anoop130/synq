@@ -330,17 +330,10 @@ pkill -f "python3 app.py"
 - [ ] Encryption for sensitive data
 - [ ] Production-ready server deployment guide
 
-## License
-
-[Add your license here]
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Authors
-
-[Add author information here]
 
 ## Acknowledgments
 
