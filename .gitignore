@@ -1,4 +1,10 @@
-build/
+build/*
+!build/binaries/
+!build/logs/
+build/binaries/*
+!build/binaries/.gitkeep
+build/logs/*
+!build/logs/.gitkeep
 *.o
 *.db
 *.log
