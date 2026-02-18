@@ -1,350 +1,359 @@
 # Synq
 
-**Synq** is a lightweight activity tracking system that monitors and logs your active applications and workflows. It consists of a C++ collector that captures system activity data and a Python Flask server that aggregates and visualizes your time usage patterns.
+A lightweight, privacy-focused activity tracking system for monitoring application usage across multiple devices.
+
+## Overview
+
+Synq tracks active applications and window titles across devices, providing a unified dashboard for analyzing time allocation and productivity patterns. The system consists of native collectors that capture window activity and a central server that aggregates and visualizes the data.
 
 ## Features
 
-- **Real-time Activity Tracking** - Captures active window titles and process information at configurable intervals
-- **Cross-platform Support** - Built for Linux systems with X11 window manager support
-- **Local and Remote Logging** - Dual logging to local files and remote server database
-- **Visual Dashboard** - Web-based interface to visualize time spent across different applications
-- **REST API** - JSON endpoints for programmatic access to collected data
-- **Minimal Overhead** - Lightweight C++ collector with efficient sampling
+- **Multi-Device Support** - Track activity across unlimited devices with automatic device registration
+- **Privacy-First Architecture** - Self-hosted or cloud deployment options with complete data control
+- **Minimal Resource Usage** - Less than 0.5% CPU utilization and 5MB memory footprint per collector
+- **Flexible Deployment** - Docker containers, PostgreSQL, or Supabase cloud backend
+- **Real-Time Dashboard** - Web interface with per-device filtering and visual analytics
+- **Open Source** - MIT licensed with full source code transparency
 
 ## Architecture
 
 ```
-┌─────────────────┐
-│  C++ Collector  │  → Samples every 5s
-│   (collectors)  │  → Captures active window, process list
-└────────┬────────┘
-         │ HTTP POST
-         ▼
-┌─────────────────┐
-│  Flask Server   │  → Stores in SQLite
-│    (server)     │  → Provides REST API & Dashboard
-└─────────────────┘
-```
-
-## Prerequisites
-
-### System Requirements
-
-- **Operating System**: Linux with X11
-- **C++ Compiler**: g++ with C++11 support
-- **Python**: Python 3.8 or higher
-
-### Dependencies
-
-**C++ Collector:**
-- libcurl (`libcurl4-openssl-dev`)
-- sqlite3 (`libsqlite3-dev`)
-- X11 development libraries (`libx11-dev`)
-
-**Python Server:**
-- Flask 3.0+
-
-### Installation
-
-#### Ubuntu/Debian
-
-```bash
-# Install C++ dependencies
-sudo apt-get update
-sudo apt-get install -y build-essential libcurl4-openssl-dev libsqlite3-dev libx11-dev
-
-# Install Python dependencies
-sudo apt-get install -y python3 python3-pip
-pip3 install flask
-```
-
-#### Fedora/RHEL
-
-```bash
-# Install C++ dependencies
-sudo dnf install -y gcc-c++ libcurl-devel sqlite-devel libX11-devel
-
-# Install Python dependencies
-sudo dnf install -y python3 python3-pip
-pip3 install flask
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  Collector   │  │  Collector   │  │  Collector   │
+│  (Device 1)  │  │  (Device 2)  │  │  (Device N)  │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       └─────────────────┼─────────────────┘
+                         ▼
+                ┌─────────────────┐
+                │  Flask Server   │
+                │  REST API       │
+                └────────┬────────┘
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+      ┌───────────────┐     ┌──────────────┐
+      │  PostgreSQL   │     │  Supabase    │
+      │  (Local/Docker)│     │  (Cloud)     │
+      └───────────────┘     └──────────────┘
 ```
 
 ## Quick Start
 
-### 1. Clone the Repository
+### Docker Deployment (Recommended)
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Anoop130/synq.git
 cd synq
+./install.sh
 ```
 
-### 2. Build the Collector
+Access the dashboard at `http://localhost:5001/dashboard`
+
+### Manual Installation
+
+**Prerequisites:**
+- Python 3.8+
+- PostgreSQL 12+
+- GCC (for collector compilation)
+
+**Server Setup:**
 
 ```bash
-# Create build directories
-mkdir -p build/binaries build/logs
+# Install Python dependencies
+pip install -r requirements.txt
 
-# Compile the collector
-cd collectors/laptop
-make
-cd ../..
-```
+# Initialize PostgreSQL database
+PGPASSWORD=synq_password psql -U synq_user -h localhost -d synq -f server/schema_postgres.sql
 
-The compiled binary will be located at `build/binaries/collector`.
-
-### 3. Initialize the Database
-
-```bash
-# Create and initialize the SQLite database
-sqlite3 server/data.db < server/schema.sql
-```
-
-### 4. Start the Server
-
-```bash
+# Start server
 cd server
 python3 app.py
 ```
 
-The server will start on `http://0.0.0.0:5000`.
-
-### 5. Run the Collector
-
-In a new terminal:
+**Collector Setup (Linux/X11):**
 
 ```bash
-cd synq
-./build/binaries/collector
+cd collectors/laptop
+make
+export SYNQ_ENDPOINT=http://localhost:5001
+../../build/binaries/collector
 ```
 
-The collector will begin sampling your active window every 5 seconds and sending data to the server.
+## Configuration
 
-## Usage
+### Server Configuration
 
-### Web Interface
+Environment variables can be set in `server/.env`:
 
-Once the server is running and collecting data, access the dashboard:
+```env
+# Backend type: postgresql or supabase
+BACKEND_TYPE=postgresql
 
+# PostgreSQL configuration
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=synq
+POSTGRES_USER=synq_user
+POSTGRES_PASSWORD=synq_password
+
+# Supabase configuration (alternative to PostgreSQL)
+# BACKEND_TYPE=supabase
+# SUPABASE_URL=https://project.supabase.co
+# SUPABASE_KEY=anon_key
 ```
-http://localhost:5000/dashboard
-```
 
-The dashboard displays:
-- Time spent in each application
-- Percentage breakdown of your activity
-- Visual progress bars for easy comparison
-- Date range for the data displayed
+### Collector Configuration
 
-### API Endpoints
+The collector endpoint is configured via environment variable:
 
-#### POST /collect
-
-Submit a sample to the server.
-
-**Request:**
 ```bash
-curl -X POST http://localhost:5000/collect \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device": "laptop",
-    "timestamp": "2026-02-16 18:30:00",
-    "active_window": "Terminal",
-    "process_count": 485
-  }'
+export SYNQ_ENDPOINT=http://server-address:5001
 ```
 
-**Response:**
-```json
+Device registration occurs automatically on first run, with the device ID stored in `~/.config/synq/device.conf`.
+
+## API Reference
+
+### Register Device
+
+```http
+POST /register
+Content-Type: application/json
+
 {
-  "status": "ok",
-  "message": "sample recorded"
+  "device_name": "workstation-01",
+  "device_type": "linux"
 }
+
+Response: {"status": "ok", "device_id": "uuid"}
 ```
 
-#### GET /view
+### Submit Activity Sample
 
-Retrieve the 10 most recent samples.
+```http
+POST /collect
+Content-Type: application/json
 
-**Request:**
-```bash
-curl http://localhost:5000/view
+{
+  "device_id": "uuid",
+  "timestamp": "2026-02-17 14:30:00",
+  "active_window": "application - window title"
+}
+
+Response: {"status": "ok", "message": "sample recorded"}
 ```
 
-**Response:**
-```json
-[
+### List Registered Devices
+
+```http
+GET /devices
+
+Response: [
   {
-    "id": 1,
-    "device": "laptop",
-    "timestamp": "2026-02-16 18:30:00",
-    "active_window": "Terminal"
+    "id": "uuid",
+    "device_name": "workstation-01",
+    "device_type": "linux",
+    "first_seen": "2026-02-17T10:00:00",
+    "last_seen": "2026-02-17T14:30:00"
   }
 ]
 ```
 
-#### GET /dashboard
+### View Activity Samples
 
-View the visual dashboard in your browser.
+```http
+GET /view?device_id=uuid&limit=100
 
-## Configuration
-
-### Collector Configuration
-
-Edit `collectors/laptop/config.ini` to adjust the sampling interval:
-
-```ini
-interval=5
+Response: [
+  {
+    "id": 1,
+    "device_id": "uuid",
+    "timestamp": "2026-02-17T14:30:00",
+    "active_window": "application - window title",
+    "created_at": "2026-02-17T14:30:00"
+  }
+]
 ```
 
-The interval is in seconds. Default is 5 seconds.
+### Dashboard
 
-### Server Configuration
-
-Modify `server/app.py` to change the server host or port:
-
-```python
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+```http
+GET /dashboard
+GET /dashboard?device_id=uuid
 ```
 
-## Project Structure
+Web interface displaying activity statistics with device filtering capabilities.
 
+## Storage Requirements
+
+**Per device with 5-second sampling interval:**
+
+- 17,280 samples per day (~1.7 MB)
+- 51 MB per month
+- 612 MB per year
+
+**Multi-device calculation:**
+- 4 devices: ~200 MB per month, 2.4 GB per year
+
+**Data retention strategy:**
+
+Implement periodic cleanup to maintain storage limits:
+
+```sql
+DELETE FROM samples WHERE created_at < NOW() - INTERVAL '90 days';
 ```
-synq/
-├── collectors/
-│   └── laptop/
-│       ├── collector.cpp       # Main collector application
-│       ├── x11_utils.cpp       # X11 window title capture
-│       ├── proc_utils.cpp      # Process enumeration utilities
-│       ├── net_utils.cpp       # HTTP client for server communication
-│       ├── config_utils.cpp    # Configuration file parser
-│       ├── Makefile            # Build configuration
-│       └── config.ini          # Runtime configuration
-├── server/
-│   ├── app.py                  # Flask application and routes
-│   ├── database.py             # SQLite database interface
-│   └── schema.sql              # Database schema definition
-├── build/
-│   ├── binaries/               # Compiled executables
-│   └── logs/                   # Local log files
-└── README.md                   # This file
-```
+
+## Performance Metrics
+
+- **CPU Usage:** < 0.5% (collector)
+- **Memory Usage:** 5-10 MB (collector)
+- **Network Traffic:** ~500 bytes per sample
+- **Database Performance:** Optimized for millions of samples with indexed queries
+
+## Deployment Options
+
+### Option 1: Docker with PostgreSQL
+
+Self-contained deployment with Docker Compose includes:
+- PostgreSQL 16 database
+- Flask application server
+- Persistent data volumes
+- Automatic health checks
+
+### Option 2: Supabase Cloud
+
+Serverless PostgreSQL backend with:
+- 500 MB free tier storage
+- REST API auto-generation
+- Built-in authentication (optional)
+- Managed backups and scaling
+
+### Option 3: Custom Cloud Deployment
+
+Deploy to any infrastructure supporting:
+- Python 3.8+ runtime
+- PostgreSQL 12+ database
+- Persistent storage for application state
 
 ## Development
 
-### Building in Debug Mode
+### Building Collector
 
 ```bash
 cd collectors/laptop
 make clean
-CXX=g++ CXXFLAGS="-Wall -g -O0" make
+make
 ```
 
-### Testing Network Functionality
-
-A standalone network test utility is provided:
+### Running Tests
 
 ```bash
-cd collectors/laptop
-g++ -Wall -O2 -o ../../build/binaries/test_net test_net.cpp net_utils.cpp -lcurl
-../../build/binaries/test_net
+# Test device registration
+curl -X POST http://localhost:5001/register \
+  -H "Content-Type: application/json" \
+  -d '{"device_name": "test-device", "device_type": "linux"}'
+
+# Test sample submission
+curl -X POST http://localhost:5001/collect \
+  -H "Content-Type: application/json" \
+  -d '{"device_id": "device-uuid", "timestamp": "2026-02-17 12:00:00", "active_window": "test"}'
 ```
 
-### Database Schema
+### Project Structure
 
-The SQLite database uses a simple schema:
-
-```sql
-CREATE TABLE IF NOT EXISTS samples (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device TEXT,
-    timestamp TEXT,
-    active_window TEXT
-);
+```
+synq/
+├── collectors/
+│   └── laptop/           # C++ collector for Linux/X11
+│       ├── collector.cpp
+│       ├── config_utils.cpp
+│       ├── net_utils.cpp
+│       ├── x11_utils.cpp
+│       └── Makefile
+├── server/
+│   ├── app.py           # Flask application
+│   ├── database.py      # Database abstraction layer
+│   ├── config.py        # Configuration management
+│   └── schema_postgres.sql
+├── docker-compose.yml   # Docker deployment configuration
+├── Dockerfile          # Server container definition
+└── install.sh          # Automated installation script
 ```
 
-## Troubleshooting
+## Platform Support
 
-### Collector doesn't start
+### Current Support
 
-**Issue**: Cannot open log file
-```
-Could not open local log file!
-```
+- **Linux** - X11 window manager (collector implemented)
+- **Server** - Any platform supporting Python 3.8+ and PostgreSQL
 
-**Solution**: Ensure the build directories exist:
-```bash
-mkdir -p build/binaries build/logs
-```
+### Planned Support
 
-### Server returns 500 errors
-
-**Issue**: Cannot connect to database
-
-**Solution**: Initialize the database:
-```bash
-sqlite3 server/data.db < server/schema.sql
-```
-
-### X11 window capture fails
-
-**Issue**: Cannot get active window
-
-**Solution**: Ensure you're running on an X11 display:
-```bash
-echo $DISPLAY  # Should output something like :0 or :1
-```
-
-For Wayland users, you may need to run under XWayland or modify the collector to use Wayland protocols.
-
-### Port 5000 already in use
-
-**Solution**: Kill existing Flask processes or change the port:
-```bash
-pkill -f "python3 app.py"
-# Or change the port in server/app.py
-```
+- Android collector application
+- iOS collector application
+- Wayland window manager support
+- macOS collector (Accessibility API)
+- Windows collector (Win32 API)
 
 ## Security Considerations
 
-- The collector captures active window titles, which may contain sensitive information
-- Data is stored locally in an unencrypted SQLite database
-- The Flask development server is not suitable for production use
-- Consider using HTTPS and authentication for production deployments
+- Window titles may contain sensitive information
+- Device IDs are randomly generated UUIDs with no personal identifiers
+- Local storage uses unencrypted SQLite for device configuration
+- Network communication uses HTTP (HTTPS recommended for production)
+- Database access requires authentication credentials
+- No telemetry or external data transmission beyond configured endpoints
 
-## Performance
+## Troubleshooting
 
-- **CPU Usage**: < 0.5% on modern systems
-- **Memory Usage**: ~5-10 MB for the collector
-- **Network**: ~500 bytes per sample (every 5 seconds by default)
-- **Storage**: ~50 KB per day of continuous operation
+**Collector compilation errors:**
+```bash
+# Install required development libraries
+sudo apt-get install build-essential libcurl4-openssl-dev libx11-dev
+```
 
-## Roadmap
+**Database connection failures:**
+```bash
+# Verify PostgreSQL is running
+sudo systemctl status postgresql
 
-- [ ] Support for Wayland window managers
-- [ ] macOS support via Accessibility APIs
-- [ ] Windows support via Win32 APIs
-- [ ] Export data to CSV/JSON
-- [ ] Time range filtering in dashboard
-- [ ] Multiple device support
-- [ ] Encryption for sensitive data
-- [ ] Production-ready server deployment guide
+# Check credentials match configuration
+psql -U synq_user -h localhost -d synq
+```
 
-## License
+**Port conflicts:**
+```bash
+# Identify process using port 5001
+sudo netstat -tlnp | grep 5001
 
-[Add your license here]
+# Modify server port in app.py or docker-compose.yml
+```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. Please follow these guidelines:
 
-## Authors
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/enhancement`)
+3. Implement changes with appropriate tests
+4. Ensure code follows existing style conventions
+5. Submit pull request with detailed description
 
-[Add author information here]
+## License
 
-## Acknowledgments
+MIT License - See LICENSE file for full text
 
-Built with:
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [libcurl](https://curl.se/libcurl/) - HTTP client library
-- [SQLite](https://www.sqlite.org/) - Embedded database
+## Technical Stack
+
+- **Backend:** Flask 3.0 (Python)
+- **Database:** PostgreSQL 16 / Supabase
+- **Collector:** C++11, libcurl, X11
+- **Deployment:** Docker, Docker Compose
+- **Frontend:** HTML5, CSS3, Vanilla JavaScript
+
+## Support
+
+- **Issues:** https://github.com/Anoop130/synq/issues
+- **Documentation:** https://github.com/Anoop130/synq/wiki
+- **Discussions:** https://github.com/Anoop130/synq/discussions
