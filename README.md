@@ -634,24 +634,4 @@ SOFTWARE.
 - **Dashboard:** https://synq-ypow.onrender.com/dashboard
 - **API Endpoint:** https://synq-ypow.onrender.com
 
-## Roadmap
-
-- [x] Multi-device support with automatic registration
-- [x] PostgreSQL backend with indexing
-- [x] Supabase cloud integration
-- [x] Docker containerization
-- [x] Render cloud deployment
-- [x] Web dashboard with device filtering
-- [ ] Android collector application
-- [ ] iOS collector application
-- [ ] User authentication system
-- [ ] Wayland window manager support
-- [ ] macOS collector (Accessibility API)
-- [ ] Windows collector (Win32 API)
-- [ ] Advanced analytics and insights
-- [ ] Data export functionality (CSV/JSON)
-- [ ] Mobile dashboard application
-
----
-
 **Built with PostgreSQL, Flask, and C++**
