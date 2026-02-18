@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: synq
+      POSTGRES_USER: synq_user
+      POSTGRES_PASSWORD: synq_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/schema_postgres.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synq_user -d synq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synq-network
+
+  synq-server:
+    build: .
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=synq
+      - POSTGRES_USER=synq_user
+      - POSTGRES_PASSWORD=synq_password
+    networks:
+      - synq-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  synq-network:
+    driver: bridge
