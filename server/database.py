@@ -1,20 +1,219 @@
-import sqlite3
-import os
+import psycopg2
+import psycopg2.extras
+from datetime import datetime
+from config import (
+    BACKEND_TYPE, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
+    POSTGRES_USER, POSTGRES_PASSWORD, SUPABASE_URL, SUPABASE_KEY
+)
 
-# Get the directory where this file is located
-DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(DB_DIR, "data.db")
+# Conditional import for Supabase
+if BACKEND_TYPE == "supabase":
+    try:
+        from supabase import create_client, Client
+        supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except ImportError:
+        print("Warning: supabase-py not installed. Install with: pip install supabase")
+        print("Falling back to PostgreSQL mode")
+        BACKEND_TYPE = "postgresql"
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Get database connection based on backend type"""
+    if BACKEND_TYPE == "supabase":
+        # Return None for Supabase - we use the client directly
+        return None
+    else:
+        # PostgreSQL (Docker local or direct connection)
+        conn = psycopg2.connect(
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT,
+            database=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD
+        )
+        return conn
 
-def insert_sample(device, timestamp, active_window):
-    db = get_db()
-    db.execute(
-        "INSERT INTO samples (device, timestamp, active_window) VALUES (?, ?, ?)",
-        (device, timestamp, active_window)
-    )
-    db.commit()
-    db.close()
+def register_device(device_id, device_name, device_type):
+    """Register or update a device"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            data = {
+                "id": device_id,
+                "device_name": device_name,
+                "device_type": device_type,
+                "first_seen": datetime.now().isoformat(),
+                "last_seen": datetime.now().isoformat()
+            }
+            supabase_client.table("devices").upsert(data).execute()
+            return device_id
+        except Exception as e:
+            print(f"Supabase error: {e}")
+            return device_id
+    else:
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute("""
+            INSERT INTO devices (id, device_name, device_type, first_seen, last_seen)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                device_name = EXCLUDED.device_name,
+                device_type = EXCLUDED.device_type,
+                last_seen = EXCLUDED.last_seen
+        """, (device_id, device_name, device_type, datetime.now(), datetime.now()))
+        
+        db.commit()
+        cursor.close()
+        db.close()
+        return device_id
+
+def get_device(device_id):
+    """Get device information"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            result = supabase_client.table("devices").select("*").eq("id", device_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"Supabase error: {e}")
+            return None
+    else:
+        db = get_db()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        cursor.execute("SELECT * FROM devices WHERE id = %s", (device_id,))
+        device = cursor.fetchone()
+        
+        cursor.close()
+        db.close()
+        return dict(device) if device else None
+
+def get_all_devices():
+    """Get all registered devices"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            result = supabase_client.table("devices").select("*").order("last_seen", desc=True).execute()
+            return result.data
+        except Exception as e:
+            print(f"Supabase error: {e}")
+            return []
+    else:
+        db = get_db()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        cursor.execute("SELECT * FROM devices ORDER BY last_seen DESC")
+        devices = cursor.fetchall()
+        
+        cursor.close()
+        db.close()
+        return [dict(d) for d in devices]
+
+def insert_sample(device_id, timestamp, active_window):
+    """Insert a sample and update device last_seen"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            # Insert sample
+            sample_data = {
+                "device_id": device_id,
+                "timestamp": timestamp,
+                "active_window": active_window
+            }
+            supabase_client.table("samples").insert(sample_data).execute()
+            
+            # Update device last_seen
+            supabase_client.table("devices").update({"last_seen": datetime.now().isoformat()}).eq("id", device_id).execute()
+        except Exception as e:
+            print(f"Supabase error: {e}")
+    else:
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Insert sample
+        cursor.execute(
+            "INSERT INTO samples (device_id, timestamp, active_window) VALUES (%s, %s, %s)",
+            (device_id, timestamp, active_window)
+        )
+        
+        # Update device last_seen
+        cursor.execute(
+            "UPDATE devices SET last_seen = %s WHERE id = %s",
+            (datetime.now(), device_id)
+        )
+        
+        db.commit()
+        cursor.close()
+        db.close()
+
+def get_samples(device_id=None, limit=10):
+    """Get recent samples, optionally filtered by device"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            query = supabase_client.table("samples").select("*")
+            if device_id:
+                query = query.eq("device_id", device_id)
+            result = query.order("id", desc=True).limit(limit).execute()
+            return result.data
+        except Exception as e:
+            print(f"Supabase error: {e}")
+            return []
+    else:
+        db = get_db()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        if device_id:
+            cursor.execute(
+                "SELECT * FROM samples WHERE device_id = %s ORDER BY id DESC LIMIT %s",
+                (device_id, limit)
+            )
+        else:
+            cursor.execute("SELECT * FROM samples ORDER BY id DESC LIMIT %s", (limit,))
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+        
+        return [dict(row) for row in rows]
+
+def get_dashboard_data(device_id=None):
+    """Get aggregated data for dashboard"""
+    if BACKEND_TYPE == "supabase":
+        try:
+            # Supabase doesn't support GROUP BY directly in the Python client
+            # We'd need to use RPC or do aggregation in Python
+            # For now, fetch all and aggregate in Python
+            query = supabase_client.table("samples").select("active_window")
+            if device_id:
+                query = query.eq("device_id", device_id)
+            result = query.execute()
+            
+            # Aggregate in Python
+            from collections import Counter
+            counts = Counter(row["active_window"] for row in result.data)
+            return [{"active_window": window, "samples": count} 
+                    for window, count in counts.most_common()]
+        except Exception as e:
+            print(f"Supabase error: {e}")
+            return []
+    else:
+        db = get_db()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        if device_id:
+            cursor.execute("""
+                SELECT active_window, COUNT(*) as samples
+                FROM samples
+                WHERE device_id = %s
+                GROUP BY active_window
+                ORDER BY samples DESC
+            """, (device_id,))
+        else:
+            cursor.execute("""
+                SELECT active_window, COUNT(*) as samples
+                FROM samples
+                GROUP BY active_window
+                ORDER BY samples DESC
+            """)
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+        
+        return [dict(row) for row in rows]
