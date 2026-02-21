@@ -70,7 +70,22 @@ The collector will automatically register the device and begin tracking activity
 To enable automatic startup, create a systemd service:
 
 ```bash
-sudo tee /etc/systemd/system/synq-collector.service > /dev/null << 'EOF'
+# First create the wrapper script with X11 access
+USERNAME=$(whoami)
+CURRENT_DISPLAY="${DISPLAY:-:1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+sudo tee /usr/local/bin/collector-wrapper.sh > /dev/null <<EOF
+#!/bin/bash
+export DISPLAY=$CURRENT_DISPLAY
+export XAUTHORITY=/home/$USERNAME/.Xauthority
+exec $SCRIPT_DIR/build/binaries/collector
+EOF
+
+sudo chmod +x /usr/local/bin/collector-wrapper.sh
+
+# Create the systemd service
+sudo tee /etc/systemd/system/synq-collector.service > /dev/null <<EOF
 [Unit]
 Description=Synq Activity Collector
 After=network-online.target
@@ -78,10 +93,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=$USER
+User=$USERNAME
+ExecStart=/usr/local/bin/collector-wrapper.sh
 Environment="SYNQ_ENDPOINT=https://synq-ypow.onrender.com"
-ExecStart=/home/$USER/synq/build/binaries/collector
-WorkingDirectory=/home/$USER/synq
+WorkingDirectory=$SCRIPT_DIR
 Restart=always
 RestartSec=10
 
@@ -96,6 +111,7 @@ sudo systemctl start synq-collector
 ```
 
 Verify the service is running:
+
 ```bash
 sudo systemctl status synq-collector
 ```
@@ -103,11 +119,13 @@ sudo systemctl status synq-collector
 ### Viewing Activity Data
 
 Access the dashboard at:
+
 ```
 https://synq-ypow.onrender.com/dashboard
 ```
 
 The dashboard displays:
+
 - Activity breakdown by application
 - Time spent per application
 - Device filtering capabilities
@@ -402,6 +420,7 @@ Contributions are welcome. Development process:
 ### Storage Requirements
 
 **Per device with 5-second sampling interval:**
+
 - 17,280 samples per day (~1.7 MB)
 - 51 MB per month
 - 612 MB per year
@@ -418,12 +437,14 @@ Contributions are welcome. Development process:
 ### Platform Support
 
 **Current:**
+
 - Linux (X11 window manager)
 - Server: Any platform with Python 3.8+ and PostgreSQL
 
 **Planned:**
+
 - Android collector
-- iOS collector  
+- iOS collector
 - Wayland window manager support
 - macOS collector (Accessibility API)
 - Windows collector (Win32 API)
@@ -461,6 +482,7 @@ SUPABASE_KEY=anon_key
 ### Collector Configuration
 
 Set via environment variable:
+
 ```bash
 export SYNQ_ENDPOINT=http://server-address:5001
 ```
@@ -481,22 +503,26 @@ Device identification is managed automatically in `~/.config/synq/device.conf`
 ### Collector Issues
 
 **Compilation errors:**
+
 ```bash
 sudo apt-get install build-essential libcurl4-openssl-dev libx11-dev
 ```
 
 **Connection failures:**
+
 - Verify server endpoint is accessible
 - Check network connectivity
 - Ensure firewall allows outbound HTTP/HTTPS
 
 **X11 window capture failures:**
+
 - Confirm X11 display is available: `echo $DISPLAY`
 - Wayland users may need XWayland compatibility layer
 
 ### Server Issues
 
 **Database connection errors:**
+
 ```bash
 # Verify PostgreSQL is running
 sudo systemctl status postgresql
@@ -506,12 +532,14 @@ psql -U synq_user -h localhost -d synq
 ```
 
 **Port conflicts:**
+
 ```bash
 # Identify process using port
 sudo netstat -tlnp | grep 5001
 ```
 
 **Supabase connection issues:**
+
 - Verify SUPABASE_URL and SUPABASE_KEY are correct
 - Check Supabase project is active
 - Ensure Row Level Security policies allow operations
@@ -519,6 +547,7 @@ sudo netstat -tlnp | grep 5001
 ### Service Management Issues
 
 **Systemd service not starting:**
+
 ```bash
 # Check service logs
 sudo journalctl -u synq-collector -n 50
@@ -538,6 +567,7 @@ DELETE FROM samples WHERE created_at < NOW() - INTERVAL '90 days';
 ```
 
 Schedule via cron:
+
 ```bash
 # Daily cleanup at 3 AM
 0 3 * * * PGPASSWORD=password psql -U user -h host -d synq -c "DELETE FROM samples WHERE created_at < NOW() - INTERVAL '90 days';"

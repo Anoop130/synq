@@ -69,7 +69,7 @@ int main() {
         // Transmit sample to server
         bool ok = sendSample(collectEndpoint, json.str());
         std::cout << "[" << timeBuf << "] "
-                  << (ok ? "✓" : "✗")
+                  << (ok ? "[OK]" : "[FAILED]")
                   << " | " << activeWindow << "\n";
 
         // Write to local log file
