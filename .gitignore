@@ -44,3 +44,6 @@ __pycache__/
 # virtual environments
 venv/
 *__pycache__/*
+
+# test scripts
+test_wrapper_fix.sh

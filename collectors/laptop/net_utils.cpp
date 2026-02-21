@@ -35,7 +35,7 @@ bool sendSample(const std::string& endpoint, const std::string& jsonPayload) {
     return success;
 }
 
-std::string registerDevice(const std::string& baseEndpoint, const std::string& deviceName, const std::string& deviceType) {
+std::string registerDevice(const std::string& baseEndpoint, const std::string& deviceId, const std::string& deviceName, const std::string& deviceType) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         std::cerr << "[curl] Failed to initialize for registration\n";
@@ -43,9 +43,9 @@ std::string registerDevice(const std::string& baseEndpoint, const std::string& d
     }
 
     std::string endpoint = baseEndpoint + "/register";
-    std::string jsonPayload = "{\"device_name\":\"" + deviceName + "\",\"device_type\":\"" + deviceType + "\"}";
+    std::string jsonPayload = "{\"device_id\":\"" + deviceId + "\",\"device_name\":\"" + deviceName + "\",\"device_type\":\"" + deviceType + "\"}";
     std::string response;
-
+    
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
 

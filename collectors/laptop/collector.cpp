@@ -33,7 +33,7 @@ int main() {
     std::cout << "Device Name: " << deviceName << "\n";
 
     // Attempt device registration (upsert operation on server)
-    std::string registeredId = registerDevice(baseEndpoint, deviceName, "linux");
+    std::string registeredId = registerDevice(baseEndpoint, deviceId, deviceName, "linux");
     if (!registeredId.empty() && registeredId != deviceId) {
         // Server returned updated ID, persist locally
         deviceId = registeredId;

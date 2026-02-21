@@ -72,15 +72,18 @@ To enable automatic startup, create a systemd service:
 ```bash
 # First create the wrapper script with X11 access
 USERNAME=$(whoami)
-CURRENT_DISPLAY="${DISPLAY:-:1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-sudo tee /usr/local/bin/collector-wrapper.sh > /dev/null <<EOF
+sudo tee /usr/local/bin/collector-wrapper.sh > /dev/null <<'EOF'
 #!/bin/bash
-export DISPLAY=$CURRENT_DISPLAY
-export XAUTHORITY=/home/$USERNAME/.Xauthority
-exec $SCRIPT_DIR/build/binaries/collector
+# Dynamically detect DISPLAY at runtime (defaults to :1 if not set)
+export DISPLAY=${DISPLAY:-:1}
+export XAUTHORITY=$HOME/.Xauthority
+exec SCRIPT_DIR_PLACEHOLDER/build/binaries/collector
 EOF
+
+# Replace the placeholder with actual script directory
+sudo sed -i "s|SCRIPT_DIR_PLACEHOLDER|$SCRIPT_DIR|g" /usr/local/bin/collector-wrapper.sh
 
 sudo chmod +x /usr/local/bin/collector-wrapper.sh
 
@@ -96,9 +99,12 @@ Type=simple
 User=$USERNAME
 ExecStart=/usr/local/bin/collector-wrapper.sh
 Environment="SYNQ_ENDPOINT=https://synq-ypow.onrender.com"
+Environment="DISPLAY=:1"
 WorkingDirectory=$SCRIPT_DIR
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
