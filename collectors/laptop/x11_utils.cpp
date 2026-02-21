@@ -29,11 +29,20 @@ Window getTopLevelParent(Display* d, Window w) {
 }
 
 std::string getActiveWindowTitle() {
+
     XInitThreads();
+
+    // check DISPLAY variablle is set 
+    const char* display_var = std::getenv("DISPLAY");
+    if (!display_var) {
+        std::cerr << "[X11] DISPLAY environment variable not set\n";
+        return "Unknown";
+    }
+    std::cerr << "[X11] DISPLAY=" << display_var << "\n";
 
     Display* d = XOpenDisplay(nullptr);
     if (!d) {
-        std::cerr << "[X11] Cannot open display\n";
+        std::cerr << "[X11] Cannot open display: " << display_var << "\n";
         return "Unknown";
     }
 
