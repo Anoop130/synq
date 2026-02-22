@@ -1,0 +1,91 @@
+@startuml Collector Components
+
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title Synq Collector - Component Architecture
+
+package "Collector Binary (C++)" {
+    
+    component [collector.cpp\n(main)] as Main
+    
+    component [config_utils] as Config
+    
+    component [x11_utils] as X11
+    
+    component [net_utils] as Net
+    
+    component [proc_utils] as Proc
+    
+    note right of Proc
+      Currently unused
+      May track process info
+    end note
+    
+    file "~/.config/synq/\ndevice.conf" as ConfigFile
+    file "build/logs/\nprocess_sample.log" as LogFile
+}
+
+cloud "External Systems" {
+    component "X11 Display Server" as X11Server
+    component "Flask API Server" as APIServer
+}
+
+Main -down-> Config : uses
+Main -down-> X11 : uses
+Main -down-> Net : uses
+Main -down-> LogFile : writes
+
+Config -down-> ConfigFile : read/write
+
+X11 -right-> X11Server : XOpenDisplay()\nXGetInputFocus()
+
+Net -right-> APIServer : HTTP POST\n(libcurl)
+
+note right of Config
+  **Responsibilities:**
+  - Device ID persistence
+  - Hostname detection
+  - Endpoint configuration
+  
+  **Files:**
+  - device.conf: device_id=<uuid>
+  - Uses $SYNQ_ENDPOINT env var
+end note
+
+note right of X11
+  **Responsibilities:**
+  - Capture focused window
+  - Extract window title
+  - Handle X11 connection
+  
+  **Requirements:**
+  - DISPLAY env var set
+  - XAUTHORITY file accessible
+  - X11 server running
+end note
+
+note right of Net
+  **Responsibilities:**
+  - HTTP communication
+  - JSON serialization
+  - Error handling
+  - Response parsing
+  
+  **Dependencies:**
+  - libcurl
+end note
+
+note bottom of Main
+  **Main Loop:**
+  1. Initialize config & endpoints
+  2. Get/generate device ID
+  3. Register with server
+  4. Loop every 5s:
+     - Get active window
+     - Build JSON payload
+     - Send to server
+     - Log result
+end note
+
+@enduml

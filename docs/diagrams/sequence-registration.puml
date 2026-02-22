@@ -1,0 +1,78 @@
+@startuml Device Registration Flow
+
+skinparam backgroundColor #FEFEFE
+title Synq - Device Registration Sequence
+
+actor User
+participant "Collector\n(collector.cpp)" as Collector
+participant "config_utils" as ConfigUtils
+participant "net_utils" as NetUtils
+participant "Flask Server\n(app.py)" as Server
+participant "database.py" as DB
+database "Supabase" as Supabase
+
+User -> Collector: Start collector
+activate Collector
+
+== Device ID Initialization ==
+
+Collector -> ConfigUtils: getDeviceId()
+activate ConfigUtils
+
+ConfigUtils -> ConfigUtils: Check ~/.config/synq/device.conf exists?
+
+alt device.conf exists
+    ConfigUtils -> ConfigUtils: Read device_id from file
+    ConfigUtils --> Collector: existing device_id
+else device.conf missing
+    ConfigUtils -> ConfigUtils: Generate new UUID
+    ConfigUtils -> ConfigUtils: Create ~/.config/synq/ directory
+    ConfigUtils -> ConfigUtils: Write device_id to file
+    ConfigUtils --> Collector: new device_id
+end
+deactivate ConfigUtils
+
+Collector -> ConfigUtils: getDeviceName()
+ConfigUtils --> Collector: hostname
+
+== Device Registration ==
+
+Collector -> NetUtils: registerDevice(endpoint, device_id, name, type)
+activate NetUtils
+
+NetUtils -> NetUtils: Build JSON payload:\n{device_id, device_name, device_type}
+NetUtils -> Server: POST /register\n{device_id, device_name, device_type}
+activate Server
+
+Server -> DB: register_device(device_id, name, type)
+activate DB
+
+DB -> Supabase: INSERT INTO devices\nON CONFLICT (id) DO UPDATE
+activate Supabase
+Supabase --> DB: Success
+deactivate Supabase
+
+DB --> Server: device_id
+deactivate DB
+
+Server --> NetUtils: {"status": "ok", "device_id": "..."}
+deactivate Server
+
+NetUtils -> NetUtils: Extract device_id from JSON response
+NetUtils --> Collector: registered device_id
+deactivate NetUtils
+
+== Post-Registration ==
+
+alt returned device_id != cached device_id
+    Collector -> ConfigUtils: saveDeviceId(new_id)
+    ConfigUtils -> ConfigUtils: Overwrite device.conf
+    Collector -> Collector: Log: "Registered with server"
+else returned device_id == cached device_id
+    Collector -> Collector: Log: "Device already registered"
+end
+
+Collector -> Collector: Start collection loop
+deactivate Collector
+
+@enduml

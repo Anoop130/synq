@@ -1,0 +1,104 @@
+@startuml Server Components
+
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title Synq Server - Component Architecture
+
+package "Flask Server (Python)" {
+    
+    component [app.py\n(Flask API)] as App
+    
+    component [database.py\n(Data Layer)] as Database
+    
+    component [config.py\n(Configuration)] as Config
+    
+    note right of Config
+      Environment variables:
+      - BACKEND_TYPE
+      - SUPABASE_URL
+      - SUPABASE_KEY
+      - POSTGRES_* (for local)
+    end note
+}
+
+database "Supabase (PostgreSQL)" as Supabase {
+    storage "devices table" as DevTable
+    storage "samples table" as SampleTable
+}
+
+cloud "External Clients" {
+    actor "Collector" as Collector
+    actor "Web Browser" as Browser
+}
+
+Collector --> App : POST /register\nPOST /collect
+Browser --> App : GET /dashboard
+
+App --> Database : calls functions
+Database --> Config : reads backend type
+Database --> Supabase : connects
+
+Database --> DevTable : INSERT/UPDATE/SELECT
+Database --> SampleTable : INSERT/SELECT
+
+note right of Database
+  **Backend Support:**
+  - Supabase (default)
+  - PostgreSQL (Docker/local)
+  
+  **Supabase Mode:**
+  - Uses supabase-py client
+  - Direct table operations
+  - Python-side aggregation
+  
+  **PostgreSQL Mode:**
+  - Uses psycopg2
+  - SQL queries
+  - Database-side aggregation
+end note
+
+note right of App
+  **Endpoints:**
+  
+  POST /register
+    - Upsert device
+    - Returns device_id
+  
+  POST /collect
+    - Verify device exists
+    - Insert sample
+    - Update last_seen
+  
+  GET /devices
+    - List all devices
+    - Sorted by last_seen
+  
+  GET /view
+    - Query recent samples
+    - Filter by device_id
+  
+  GET /dashboard
+    - Aggregate view
+    - Activity breakdown
+    - Time calculations
+end note
+
+note bottom of Supabase
+  **Schema:**
+  
+  devices:
+    - id: uuid (PK)
+    - device_name: varchar
+    - device_type: varchar
+    - first_seen: timestamp
+    - last_seen: timestamp
+  
+  samples:
+    - id: serial (PK)
+    - device_id: uuid (FK → devices)
+    - timestamp: timestamp
+    - active_window: text
+end note
+
+@enduml

@@ -6,6 +6,17 @@ A lightweight, privacy-focused activity tracking system for monitoring applicati
 
 Synq tracks active applications and window titles across devices, providing a unified dashboard for analyzing time allocation and productivity patterns. The system consists of native collectors that capture window activity and a central server that aggregates and visualizes the data through PostgreSQL and Supabase infrastructure.
 
+### System Architecture
+
+![System Architecture](docs/diagrams/Synq%20System%20Architecture.png)
+
+**Components:**
+- **Collector** (C++ binary) - Runs on user devices to capture active window titles via X11
+- **Server** (Flask API) - Central API hosted on Render for data collection and aggregation  
+- **Database** (Supabase PostgreSQL) - Stores device registrations and activity samples
+
+For detailed flow diagrams, see [Architecture Documentation](docs/diagrams/).
+
 ## Features
 
 - **Multi-Device Support** - Unlimited device tracking with automatic registration
@@ -35,6 +46,135 @@ Synq tracks active applications and window titles across devices, providing a un
               │   Free Tier         │
               └─────────────────────┘
 ```
+
+### Detailed Flow Diagrams
+
+<details>
+<summary><b>Device Registration Flow</b></summary>
+
+![Device Registration](docs/diagrams/Device%20Registration%20Flow.png)
+
+Shows the complete device registration process including:
+- Device ID generation and caching
+- Server communication
+- Database upsert operations
+- Error handling when server is unreachable
+
+</details>
+
+<details>
+<summary><b>Activity Sample Collection</b></summary>
+
+![Sample Collection](docs/diagrams/Activity%20Sample%20Collection%20Flow.png)
+
+Details the continuous 5-second sampling loop:
+- X11 window title capture
+- JSON payload construction
+- Server communication
+- Database storage
+- Local logging
+
+</details>
+
+<details>
+<summary><b>Collector Components</b></summary>
+
+![Collector Components](docs/diagrams/Collector%20Components.png)
+
+Internal architecture of the C++ collector:
+- config_utils: Device ID and configuration management
+- x11_utils: Window title capture via X11
+- net_utils: HTTP communication with server
+- Main loop and orchestration
+
+</details>
+
+<details>
+<summary><b>Server Components</b></summary>
+
+![Server Components](docs/diagrams/Server%20Components.png)
+
+Flask server architecture:
+- API endpoints (/register, /collect, /dashboard, etc.)
+- Database abstraction layer
+- Supabase client integration
+- Data aggregation logic
+
+</details>
+
+<details>
+<summary><b>Error Handling</b></summary>
+
+![Error Handling](docs/diagrams/Error%20Handling%20Flow.png)
+
+Comprehensive error handling scenarios:
+- X11 display errors
+- Network failures
+- Unregistered devices
+- Configuration errors
+
+</details>
+
+---
+
+## Architecture (ASCII)
+
+```
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  Collector   │  │  Collector   │  │  Collector   │
+│  (Device 1)  │  │  (Device 2)  │  │  (Device N)  │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       └─────────────────┼─────────────────┘
+                         ▼
+              ┌─────────────────────┐
+              │   Render (Flask)    │
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+              ┌─────────────────────┐
+              │  Supabase (Postgres)│
+              │                     │
+              └─────────────────────┘
+```
+
+---
+
+## Deployment Options
+
+Synq supports three deployment modes (but using option 1 is recommended as there might not be regular updates on the other two):
+
+### 1. Cloud Deployment (Recommended for Multi-Device)
+
+Free cloud hosting using Render + Supabase:
+
+- **Server**: Render.com free tier (Flask API)
+- **Database**: Supabase free tier (PostgreSQL)
+- **Best for**: Multiple devices, remote access, no infrastructure management
+
+The main README includes cloud deployment instructions below.
+
+### 2. Self-Hosted (Docker)
+
+Run everything locally with Docker Compose:
+
+```bash
+git clone https://github.com/Anoop130/synq.git
+cd synq
+./install.sh
+```
+
+- **Includes**: PostgreSQL + Flask server
+- **Best for**: Complete privacy, local network only, no cloud dependencies
+- **Access**: http://localhost:5001/dashboard
+
+📖 **Full Guide**: [docs/DOCKER_SETUP.md](docs/DOCKER_SETUP.md)
+
+### 3. Manual PostgreSQL
+
+Direct PostgreSQL setup for advanced users:
+
+📖 **Full Guide**: [docs/POSTGRESQL_SETUP.md](docs/POSTGRESQL_SETUP.md)
 
 ---
 

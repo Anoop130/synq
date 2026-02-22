@@ -1,0 +1,119 @@
+@startuml Error Handling Flow
+
+skinparam backgroundColor #FEFEFE
+title Synq - Error Handling & Edge Cases
+
+participant Collector
+participant X11
+participant Server
+participant Supabase
+
+== X11 Display Error ==
+
+Collector -> X11: getActiveWindowTitle()
+activate X11
+
+alt DISPLAY not set
+    X11 -> X11: Check $DISPLAY
+    X11 --> Collector: return "Unknown"
+    note right: Collector continues\nwith "Unknown" as window
+else Cannot open display
+    X11 -> X11: XOpenDisplay() fails
+    X11 --> Collector: return "Unknown"
+    note right: DISPLAY set but\nX11 server unreachable
+else No active window
+    X11 -> X11: XGetInputFocus() returns None
+    X11 --> Collector: return "No active window"
+end
+deactivate X11
+
+Collector -> Collector: Continue with result\n(doesn't abort)
+
+== Server Connection Error ==
+
+Collector -> Server: POST /collect
+activate Server
+
+alt Server unreachable
+    Server -x Collector: Connection timeout/refused
+    note right: Network down or\nserver offline
+    Collector -> Collector: Log "[FAILED]"
+    Collector -> Collector: Continue to next sample
+else Server error (5xx)
+    Server --> Collector: 500 Internal Error
+    Collector -> Collector: Log "[FAILED]"
+    Collector -> Collector: Continue to next sample
+else Invalid response
+    Server --> Collector: Malformed JSON
+    Collector -> Collector: Log "[FAILED]"
+    Collector -> Collector: Continue to next sample
+end
+deactivate Server
+
+note over Collector
+  Collector is resilient:
+  - Never crashes on errors
+  - Continues sampling
+  - Logs failures
+  - Samples stored locally in log file
+end note
+
+== Device Not Registered ==
+
+Collector -> Server: POST /collect {device_id, ...}
+activate Server
+
+Server -> Supabase: SELECT device WHERE id = ?
+activate Supabase
+Supabase --> Server: No results
+deactivate Supabase
+
+Server --> Collector: {"error": "Device not registered"} (404)
+deactivate Server
+
+Collector -> Collector: Log "[FAILED]"
+
+note right of Collector
+  This happens when:
+  - Device deleted from Supabase
+  - Wrong device_id sent
+  - Database reset
+  
+  Solution: Re-register device
+end note
+
+== Registration During Startup ==
+
+Collector -> Server: POST /register {device_id, ...}
+activate Server
+
+alt Server unreachable
+    Server -x Collector: Connection error
+    Collector -> Collector: Log warning:\n"Could not register, using cached ID"
+    Collector -> Collector: Continue with cached device_id
+    note right: Collector works offline\nwill retry next startup
+else Server responds
+    Server -> Supabase: INSERT ON CONFLICT UPDATE
+    activate Supabase
+    Supabase --> Server: device_id
+    deactivate Supabase
+    Server --> Collector: {"device_id": "..."}
+    Collector -> Collector: Sync device_id if changed
+end
+deactivate Server
+
+== Configuration Errors ==
+
+alt device.conf corrupted
+    Collector -> Collector: Failed to parse device.conf
+    Collector -> Collector: Generate new device_id
+    Collector -> Collector: Overwrite device.conf
+end
+
+alt ~/.config/synq/ not writable
+    Collector -> Collector: Cannot create config directory
+    Collector -x Collector: Exit with error
+    note right: Fatal error:\nCannot persist device_id
+end
+
+@enduml

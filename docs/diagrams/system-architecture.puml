@@ -1,0 +1,58 @@
+@startuml Synq System Architecture
+
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title Synq - Multi-Device Activity Tracker\nSystem Architecture
+
+package "User Device (Linux)" {
+    component [Collector\n(C++ Binary)] as Collector
+    component [X11 Display\nServer] as X11
+    component [systemd\nService] as Systemd
+    file [~/.config/synq/\ndevice.conf] as Config
+    
+    Systemd -down-> Collector : manages
+    Collector -right-> X11 : getActiveWindow()
+    Collector -down-> Config : read/write device_id
+}
+
+cloud "Render.com" {
+    component [Flask Server\n(Python)] as Server
+    component [database.py] as DBLayer
+}
+
+database "Supabase\n(PostgreSQL)" as Supabase {
+    storage "devices" as DevicesTable
+    storage "samples" as SamplesTable
+}
+
+actor User
+
+User -down-> Collector : starts
+Collector -right-> Server : HTTPS
+Server -right-> Supabase : PostgreSQL\nprotocol
+
+note right of Collector
+  **Responsibilities:**
+  - Generate/cache device ID
+  - Capture active window title
+  - Send samples every 5s
+  - Handle server failures
+end note
+
+note right of Server
+  **Endpoints:**
+  /register - Device registration
+  /collect - Sample ingestion
+  /dashboard - Data visualization
+  /devices - List all devices
+  /view - Query samples
+end note
+
+note right of Supabase
+  **Tables:**
+  devices(id, name, type, first_seen, last_seen)
+  samples(id, device_id, timestamp, active_window)
+end note
+
+@enduml

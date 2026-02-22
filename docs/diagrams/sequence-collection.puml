@@ -1,0 +1,101 @@
+@startuml Activity Sample Collection Flow
+
+skinparam backgroundColor #FEFEFE
+title Synq - Activity Sample Collection Loop
+
+participant "Collector\n(collector.cpp)" as Collector
+participant "x11_utils" as X11Utils
+participant "net_utils" as NetUtils
+participant "Flask Server\n(app.py)" as Server
+participant "database.py" as DB
+database "Supabase" as Supabase
+
+activate Collector
+
+loop Every 5 seconds
+    
+    == Capture Active Window ==
+    
+    Collector -> X11Utils: getActiveWindowTitle()
+    activate X11Utils
+    
+    X11Utils -> X11Utils: Check DISPLAY env var set?
+    alt DISPLAY not set
+        X11Utils --> Collector: "Unknown"
+    else DISPLAY set
+        X11Utils -> X11Utils: XOpenDisplay(DISPLAY)
+        X11Utils -> X11Utils: XGetInputFocus()
+        X11Utils -> X11Utils: getTopLevelParent(window)
+        X11Utils -> X11Utils: XFetchName() or\nXGetWindowProperty(_NET_WM_NAME)
+        X11Utils -> X11Utils: XCloseDisplay()
+        X11Utils --> Collector: window_title
+    end
+    deactivate X11Utils
+    
+    == Build Sample Payload ==
+    
+    Collector -> Collector: Get current timestamp
+    Collector -> Collector: Build JSON:\n{"device_id": "...",\n "timestamp": "...",\n "active_window": "..."}
+    
+    == Send to Server ==
+    
+    Collector -> NetUtils: sendSample(endpoint, json_payload)
+    activate NetUtils
+    
+    NetUtils -> Server: POST /collect\n{device_id, timestamp, active_window}
+    activate Server
+    
+    Server -> Server: Validate device_id present
+    
+    alt device_id missing
+        Server --> NetUtils: {"error": "device_id required"} (400)
+    else device exists
+        Server -> DB: get_device(device_id)
+        activate DB
+        DB -> Supabase: SELECT * FROM devices WHERE id = ?
+        activate Supabase
+        
+        alt device not found
+            Supabase --> DB: No results
+            deactivate Supabase
+            DB --> Server: None
+            deactivate DB
+            Server --> NetUtils: {"error": "Device not registered"} (404)
+        else device found
+            Supabase --> DB: device record
+            deactivate Supabase
+            DB --> Server: device data
+            deactivate DB
+            
+            Server -> DB: insert_sample(device_id, timestamp, active_window)
+            activate DB
+            DB -> Supabase: INSERT INTO samples\nUPDATE devices SET last_seen
+            activate Supabase
+            Supabase --> DB: Success
+            deactivate Supabase
+            DB --> Server: Done
+            deactivate DB
+            
+            Server --> NetUtils: {"status": "ok",\n "message": "sample recorded"} (200)
+        end
+    end
+    deactivate Server
+    
+    NetUtils --> Collector: success/failure boolean
+    deactivate NetUtils
+    
+    == Log Result ==
+    
+    alt sendSample() succeeded
+        Collector -> Collector: Print: "[timestamp] [OK] | window_title"
+        Collector -> Collector: Log to file: "sent"
+    else sendSample() failed
+        Collector -> Collector: Print: "[timestamp] [FAILED] | window_title"
+        Collector -> Collector: Log to file: "failed"
+    end
+    
+    Collector -> Collector: sleep(5 seconds)
+    
+end
+
+@enduml
