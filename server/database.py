@@ -1,6 +1,6 @@
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import (
     BACKEND_TYPE, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
     POSTGRES_USER, POSTGRES_PASSWORD, SUPABASE_URL, SUPABASE_KEY
@@ -174,19 +174,40 @@ def get_samples(device_id=None, limit=10):
 
 def get_dashboard_data(device_id=None):
     """Get aggregated data for dashboard"""
+    day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+
     if BACKEND_TYPE == "supabase":
         try:
-            # Supabase doesn't support GROUP BY directly in the Python client
-            # We'd need to use RPC or do aggregation in Python
-            # For now, fetch all and aggregate in Python
-            query = supabase_client.table("samples").select("active_window")
-            if device_id:
-                query = query.eq("device_id", device_id)
-            result = query.execute()
-            
-            # Aggregate in Python
+            batch_size = 1000
+            offset = 0
+            all_rows = []
+
+            while True:
+                query = (
+                    supabase_client.table("samples")
+                    .select("active_window")
+                    .gte("timestamp", day_start.isoformat())
+                    .lt("timestamp", day_end.isoformat())
+                    .order("id", desc=False)
+                    .range(offset, offset + batch_size - 1)
+                )
+                if device_id:
+                    query = query.eq("device_id", device_id)
+
+                result = query.execute()
+                batch = result.data or []
+                if not batch:
+                    break
+
+                all_rows.extend(batch)
+                if len(batch) < batch_size:
+                    break
+
+                offset += batch_size
+
             from collections import Counter
-            counts = Counter(row["active_window"] for row in result.data)
+            counts = Counter(row.get("active_window") for row in all_rows)
             return [{"active_window": window, "samples": count} 
                     for window, count in counts.most_common()]
         except Exception as e:
@@ -201,16 +222,20 @@ def get_dashboard_data(device_id=None):
                 SELECT active_window, COUNT(*) as samples
                 FROM samples
                 WHERE device_id = %s
+                AND timestamp >= %s
+                AND timestamp < %s
                 GROUP BY active_window
                 ORDER BY samples DESC
-            """, (device_id,))
+            """, (device_id, day_start, day_end))
         else:
             cursor.execute("""
                 SELECT active_window, COUNT(*) as samples
                 FROM samples
+                WHERE timestamp >= %s
+                AND timestamp < %s
                 GROUP BY active_window
                 ORDER BY samples DESC
-            """)
+            """, (day_start, day_end))
         
         rows = cursor.fetchall()
         cursor.close()
