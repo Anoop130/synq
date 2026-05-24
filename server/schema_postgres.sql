@@ -1,4 +1,7 @@
 -- PostgreSQL schema for Synq activity tracking system
+-- WARNING: the DROP statements below are for fresh initialisation only (used by Docker).
+-- Do NOT run this file against an existing database — it will destroy all data.
+-- To reset manually, use: psql -f server/reset.sql
 DROP TABLE IF EXISTS samples CASCADE;
 DROP TABLE IF EXISTS devices CASCADE;
 
