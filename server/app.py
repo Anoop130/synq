@@ -6,12 +6,22 @@ app = Flask(__name__)
 
 @app.route("/register", methods=["POST"])
 def register():
-    """Register a new device"""
+    """
+    registers a device, generating a UUID if one is not supplied.
+
+    inputs:
+        JSON body with optional device_id (str, UUID v4, max 36 chars),
+        optional device_name (str, max 255 chars),
+        optional device_type (str, max 50 chars)
+
+    returns:
+        JSON with status (str) and device_id (str), HTTP 200 on success or 400 on bad input
+    """
     data = request.get_json(force=True)
     if not data:
         return jsonify({"error": "No JSON received"}), 400
 
-    device_id = data.get("device_id") or str(uuid.uuid4())
+    device_id   = data.get("device_id") or str(uuid.uuid4())
     device_name = data.get("device_name", "Unknown Device")
     device_type = data.get("device_type", "unknown")
 
@@ -20,7 +30,17 @@ def register():
 
 @app.route("/collect", methods=["POST"])
 def collect():
-    """Collect a sample from a device"""
+    """
+    records one activity sample for a registered device.
+
+    inputs:
+        JSON body with device_id (str, UUID v4, max 36 chars, required),
+        timestamp (str, ISO 8601, e.g. 2026-05-24 12:00:00),
+        active_window (str, window title, unbounded length)
+
+    returns:
+        JSON with status and message, HTTP 200 on success, 400/404 on error
+    """
     data = request.get_json(force=True)
     if not data:
         return jsonify({"error": "No JSON received"}), 400
@@ -29,10 +49,10 @@ def collect():
     if not device_id:
         return jsonify({"error": "device_id required"}), 400
 
-    timestamp = data.get("timestamp", "")
+    timestamp     = data.get("timestamp", "")
     active_window = data.get("active_window", "")
 
-    # Verify device exists
+    # verify device exists before inserting sample
     device = get_device(device_id)
     if not device:
         return jsonify({"error": "Device not registered"}), 404
@@ -42,42 +62,67 @@ def collect():
 
 @app.route("/devices", methods=["GET"])
 def list_devices():
-    """List all registered devices"""
+    """
+    returns all registered devices ordered by most recently seen.
+
+    inputs:
+        none
+
+    returns:
+        JSON array of device objects, HTTP 200
+    """
     devices = get_all_devices()
     return jsonify(devices)
 
 @app.route("/view", methods=["GET"])
 def view():
-    """View recent samples"""
+    """
+    returns recent activity samples, optionally filtered to one device.
+
+    inputs:
+        query param device_id (str, UUID v4, optional),
+        query param limit (int, default 10, min 1)
+
+    returns:
+        JSON array of sample objects, HTTP 200
+    """
     device_id = request.args.get("device_id")
-    limit = int(request.args.get("limit", 10))
-    rows = get_samples(device_id=device_id, limit=limit)
+    limit     = int(request.args.get("limit", 10))
+    rows      = get_samples(device_id=device_id, limit=limit)
     return jsonify(rows)
 
 @app.route("/dashboard")
 def dashboard():
-    """Multi-device dashboard"""
-    device_id = request.args.get("device_id")  # Optional filter
-    devices = get_all_devices()
-    rows = get_dashboard_data(device_id=device_id)
+    """
+    renders the HTML activity dashboard for today's 24 hour window.
 
-    total = sum(r["samples"] for r in rows)
+    inputs:
+        query param device_id (str, UUID v4, optional filter)
+
+    returns:
+        HTML string, HTTP 200
+    """
+    device_id = request.args.get("device_id")
+    devices   = get_all_devices()
+    rows      = get_dashboard_data(device_id=device_id)
+
+    total    = sum(r["samples"] for r in rows)
     interval = 5  # polling interval in seconds
 
     data = []
     for r in rows:
         seconds = r["samples"] * interval
-        hrs = seconds // 3600
-        mins = (seconds % 3600) // 60
-        pct = (r["samples"] / total) * 100 if total else 0
+        hrs     = seconds // 3600
+        mins    = (seconds % 3600) // 60
+        pct     = (r["samples"] / total) * 100 if total else 0
         data.append({
-            "app": r["active_window"] or "Unknown",
-            "hours": int(hrs),
+            "app":     r["active_window"] or "Unknown",
+            "hours":   int(hrs),
             "minutes": int(mins),
-            "pct": round(pct, 2)
+            "pct":     round(pct, 2)
         })
 
-    # Device selector dropdown
+    # build device selector options
     device_options = ""
     for d in devices:
         selected = "selected" if device_id == str(d["id"]) else ""
@@ -133,5 +178,5 @@ def dashboard():
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5001))
-    print(f"Starting server on http://0.0.0.0:{port}")
+    print(f"[INFO] starting server on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port)

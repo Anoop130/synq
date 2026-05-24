@@ -13,6 +13,10 @@ struct ProcessInfo {
     long memoryKB;
 };
 
+// reads CPU and memory stats for a single process from /proc/<pid>/stat.
+// input:  pid (int) a valid process ID, range 1 to INT_MAX
+// output: ProcessInfo with pid, name, and memoryKB fields populated;
+//         name is empty and memoryKB is 0 if the stat file cannot be opened
 ProcessInfo readProcessInfo(int pid) {
     ProcessInfo p;
     p.pid = pid;
@@ -27,7 +31,7 @@ ProcessInfo readProcessInfo(int pid) {
 
     statFile >> ignore >> name >> state;
 
-    // skip ahead until RSS
+    // skip fields before RSS
     std::string tmp;
     for (int i = 0; i < 20; ++i)
         statFile >> tmp;
@@ -44,23 +48,24 @@ ProcessInfo readProcessInfo(int pid) {
     return p;
 }
 
-
-std::vector<ProcessInfo> getProcessList(){
+// enumerates all running processes by scanning /proc for numeric directory entries.
+// input:  none
+// output: std::vector<ProcessInfo>, one entry per readable process; empty on /proc open failure
+std::vector<ProcessInfo> getProcessList() {
     std::vector<ProcessInfo> processList;
-    DIR *dir = opendir("/proc");
+    DIR* dir = opendir("/proc");
     if (!dir) {
-        std::cerr << "failed to open /proc directory\n";
+        std::cerr << "[ERROR] cannot open /proc directory\n";
         return processList;
     }
-    struct dirent *entry;
+    struct dirent* entry;
     while ((entry = readdir(dir)) != nullptr) {
-        if (std::isdigit(entry->d_name[0])){
+        if (std::isdigit(entry->d_name[0])) {
             int pid = atoi(entry->d_name);
             ProcessInfo info = readProcessInfo(pid);
             if (!info.name.empty()) {
                 processList.push_back(info);
             }
-            
         }
     }
     closedir(dir);
