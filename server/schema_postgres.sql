@@ -20,11 +20,14 @@ CREATE TABLE samples (
     device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     timestamp TIMESTAMP NOT NULL,
     active_window TEXT,
+    app_name VARCHAR(255),
+    activity TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Performance indexes
 CREATE INDEX idx_samples_device_id ON samples(device_id);
 CREATE INDEX idx_samples_timestamp ON samples(timestamp);
+CREATE INDEX idx_samples_app_name ON samples(app_name);
 CREATE INDEX idx_samples_device_timestamp ON samples(device_id, timestamp DESC);
 CREATE INDEX idx_devices_last_seen ON devices(last_seen DESC);

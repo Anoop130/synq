@@ -160,24 +160,52 @@ def get_all_devices():
             cursor.close()
         return [dict(d) for d in devices]
 
+def parse_window_title(raw):
+    """
+    splits a raw X11 window title into an app name and activity string.
+    uses the delimiter ' - ' common across Linux window managers.
+
+    3-part titles ("file - project - App"): last part is app_name, second-to-last is activity.
+    2-part titles ("App - page"): first part is app_name, second is activity.
+    1-part or empty: app_name is the full raw string, activity is empty.
+
+    inputs:
+        raw (str) X11 window title, unbounded length
+
+    returns:
+        tuple of (app_name: str max 255 chars, activity: str unbounded)
+    """
+    if not raw:
+        return ("", "")
+    parts = raw.split(" - ")
+    if len(parts) >= 3:
+        return (parts[-1].strip()[:255], parts[-2].strip())
+    if len(parts) == 2:
+        return (parts[0].strip()[:255], parts[1].strip())
+    return (raw.strip()[:255], "")
+
 def insert_sample(device_id, timestamp, active_window):
     """
-    records one activity sample and updates the device last_seen timestamp.
+    records one activity sample, parses the window title into structured fields,
+    and updates the device last_seen timestamp.
 
     inputs:
         device_id     (str) UUID v4 format, max 36 chars, must already exist in devices
         timestamp     (str) ISO 8601 datetime string e.g. 2026-05-24 12:00:00
-        active_window (str) window title, unbounded length
+        active_window (str) raw X11 window title, unbounded length
 
     returns:
         None
     """
+    app_name, activity = parse_window_title(active_window)
     if BACKEND_TYPE == "supabase":
         try:
             supabase_client.table("samples").insert({
                 "device_id": device_id,
                 "timestamp": timestamp,
-                "active_window": active_window
+                "active_window": active_window,
+                "app_name": app_name,
+                "activity": activity
             }).execute()
             supabase_client.table("devices").update({
                 "last_seen": datetime.now().isoformat()
@@ -188,8 +216,9 @@ def insert_sample(device_id, timestamp, active_window):
         with get_db() as db:
             cursor = db.cursor()
             cursor.execute(
-                "INSERT INTO samples (device_id, timestamp, active_window) VALUES (%s, %s, %s)",
-                (device_id, timestamp, active_window)
+                """INSERT INTO samples (device_id, timestamp, active_window, app_name, activity)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (device_id, timestamp, active_window, app_name, activity)
             )
             cursor.execute(
                 "UPDATE devices SET last_seen = %s WHERE id = %s",
