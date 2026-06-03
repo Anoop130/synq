@@ -43,6 +43,7 @@ __pycache__/
 
 # virtual environments
 venv/
+.venv/
 *__pycache__/*
 
 # test scripts

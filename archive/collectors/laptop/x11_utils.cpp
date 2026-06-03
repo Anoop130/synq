@@ -28,7 +28,9 @@ Window getTopLevelParent(Display* d, Window w) {
 }
 
 // reads the title of the currently focused X11 window.
-// tries the legacy WM_NAME atom first, then falls back to the UTF8 _NET_WM_NAME atom.
+// primary source: _NET_ACTIVE_WINDOW on the root window (set by the window manager).
+// fallback: XGetInputFocus + tree walk if _NET_ACTIVE_WINDOW is unavailable.
+// title fetch: tries _NET_WM_NAME first, then WM_NAME via XFetchName.
 // input:  none
 // output: std::string, the window title or a sentinel string if X11 is unavailable
 std::string getActiveWindowTitle() {
@@ -44,46 +46,59 @@ std::string getActiveWindowTitle() {
         return "Unknown";
     }
 
-    Window w;
-    int revert;
-    XGetInputFocus(d, &w, &revert);
+    Window root = DefaultRootWindow(d);
+    Atom net_active = XInternAtom(d, "_NET_ACTIVE_WINDOW", False);
 
-    if (w == None) {
-        XCloseDisplay(d);
-        return "No active window";
+    Atom actual;
+    int format;
+    unsigned long nitems, bytes;
+    unsigned char* data = nullptr;
+    Window w = None;
+
+    if (Success == XGetWindowProperty(
+            d, root, net_active, 0, 1, False, XA_WINDOW,
+            &actual, &format, &nitems, &bytes, &data)) {
+        if (data) {
+            w = *reinterpret_cast<Window*>(data);
+            XFree(data);
+        }
     }
 
-    w = getTopLevelParent(d, w);
+    if (w == None || w == root) {
+        int revert;
+        XGetInputFocus(d, &w, &revert);
+        if (w == None) {
+            XCloseDisplay(d);
+            return "No active window";
+        }
+        w = getTopLevelParent(d, w);
+    }
+
+    Atom prop = XInternAtom(d, "_NET_WM_NAME", False);
+    data = nullptr;
+    std::string title;
+
+    if (Success == XGetWindowProperty(
+            d, w, prop, 0, (~0L), False, AnyPropertyType,
+            &actual, &format, &nitems, &bytes, &data)) {
+        if (data && nitems > 0) {
+            title = reinterpret_cast<char*>(data);
+            XFree(data);
+            XCloseDisplay(d);
+            return title;
+        }
+        if (data) XFree(data);
+    }
 
     char* name = nullptr;
-    int status = XFetchName(d, w, &name);
-
-    if (status > 0 && name) {
-        std::string title(name);
+    if (XFetchName(d, w, &name) > 0 && name) {
+        title = name;
         XFree(name);
         XCloseDisplay(d);
         return title;
     }
     if (name) XFree(name);
 
-    Atom utf8 = XInternAtom(d, "UTF8_STRING", True);
-    Atom prop = XInternAtom(d, "_NET_WM_NAME", True);
-
-    Atom actual;
-    int format;
-    unsigned long nitems, bytes;
-    unsigned char* data = nullptr;
-    std::string title = "Unnamed window";
-
-    if (Success == XGetWindowProperty(
-            d, w, prop, 0, (~0L), False, utf8,
-            &actual, &format, &nitems, &bytes, &data)) {
-        if (data) {
-            title = reinterpret_cast<char*>(data);
-            XFree(data);
-        }
-    }
-
     XCloseDisplay(d);
-    return title;
+    return "Unnamed window";
 }
