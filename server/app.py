@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 from database import register_device, get_device, get_all_devices, insert_sample, get_samples, get_dashboard_data
 import uuid
 
