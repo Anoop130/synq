@@ -22,6 +22,7 @@ CREATE TABLE samples (
     active_window TEXT,
     app_name VARCHAR(255),
     activity TEXT,
+    duration_seconds INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

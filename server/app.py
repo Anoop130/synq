@@ -49,15 +49,17 @@ def collect():
     if not device_id:
         return jsonify({"error": "device_id required"}), 400
 
-    timestamp     = data.get("timestamp", "")
-    active_window = data.get("active_window", "")
+    timestamp        = data.get("timestamp", "")
+    active_window    = data.get("active_window", "")
+    duration_seconds = data.get("duration_seconds")
+    if duration_seconds is not None:
+        duration_seconds = int(duration_seconds)
 
-    # verify device exists before inserting sample
     device = get_device(device_id)
     if not device:
         return jsonify({"error": "Device not registered"}), 404
 
-    insert_sample(device_id, timestamp, active_window)
+    insert_sample(device_id, timestamp, active_window, duration_seconds)
     return jsonify({"status": "ok", "message": "sample recorded"}), 200
 
 @app.route("/devices", methods=["GET"])
@@ -106,15 +108,14 @@ def dashboard():
     devices   = get_all_devices()
     rows      = get_dashboard_data(device_id=device_id)
 
-    total    = sum(r["samples"] for r in rows)
-    interval = 5  # polling interval in seconds
+    total = sum(r["total_seconds"] for r in rows)
 
     data = []
     for r in rows:
-        seconds = r["samples"] * interval
+        seconds = r["total_seconds"]
         hrs     = seconds // 3600
         mins    = (seconds % 3600) // 60
-        pct     = (r["samples"] / total) * 100 if total else 0
+        pct     = (seconds / total) * 100 if total else 0
         data.append({
             "app":     r["active_window"] or "Unknown",
             "hours":   int(hrs),

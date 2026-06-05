@@ -184,15 +184,16 @@ def parse_window_title(raw):
         return (parts[0].strip()[:255], parts[1].strip())
     return (raw.strip()[:255], "")
 
-def insert_sample(device_id, timestamp, active_window):
+def insert_sample(device_id, timestamp, active_window, duration_seconds=None):
     """
     records one activity sample, parses the window title into structured fields,
     and updates the device last_seen timestamp.
 
     inputs:
-        device_id     (str) UUID v4 format, max 36 chars, must already exist in devices
-        timestamp     (str) ISO 8601 datetime string e.g. 2026-05-24 12:00:00
-        active_window (str) raw X11 window title, unbounded length
+        device_id        (str) UUID v4 format, max 36 chars, must already exist in devices
+        timestamp        (str) ISO 8601 datetime string e.g. 2026-05-24 12:00:00
+        active_window    (str) raw window title, unbounded length
+        duration_seconds (int or None) measured session length in seconds; None if unknown
 
     returns:
         None
@@ -200,13 +201,15 @@ def insert_sample(device_id, timestamp, active_window):
     app_name, activity = parse_window_title(active_window)
     if BACKEND_TYPE == "supabase":
         try:
-            supabase_client.table("samples").insert({
-                "device_id": device_id,
-                "timestamp": timestamp,
-                "active_window": active_window,
-                "app_name": app_name,
-                "activity": activity
-            }).execute()
+            row = {
+                "device_id":        device_id,
+                "timestamp":        timestamp,
+                "active_window":    active_window,
+                "app_name":         app_name,
+                "activity":         activity,
+                "duration_seconds": duration_seconds
+            }
+            supabase_client.table("samples").insert(row).execute()
             supabase_client.table("devices").update({
                 "last_seen": datetime.now().isoformat()
             }).eq("id", device_id).execute()
@@ -216,9 +219,10 @@ def insert_sample(device_id, timestamp, active_window):
         with get_db() as db:
             cursor = db.cursor()
             cursor.execute(
-                """INSERT INTO samples (device_id, timestamp, active_window, app_name, activity)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (device_id, timestamp, active_window, app_name, activity)
+                """INSERT INTO samples
+                   (device_id, timestamp, active_window, app_name, activity, duration_seconds)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (device_id, timestamp, active_window, app_name, activity, duration_seconds)
             )
             cursor.execute(
                 "UPDATE devices SET last_seen = %s WHERE id = %s",
@@ -263,14 +267,16 @@ def get_samples(device_id=None, limit=10):
 
 def get_dashboard_data(device_id=None):
     """
-    aggregates sample counts grouped by window title for today's 24 hour window.
+    aggregates total time spent per window title for today's 24 hour window.
+    uses duration_seconds when available; falls back to 5 seconds per sample
+    for rows without a measured duration (e.g. legacy polling data).
 
     inputs:
         device_id (str or None) UUID v4, max 36 chars; pass None to aggregate all devices
 
     returns:
-        list of dicts with keys active_window (str) and samples (int),
-        sorted by samples descending; empty list on error
+        list of dicts with keys active_window (str) and total_seconds (int),
+        sorted by total_seconds descending; empty list on error
     """
     day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     day_end   = day_start + timedelta(days=1)
@@ -284,7 +290,7 @@ def get_dashboard_data(device_id=None):
             while True:
                 query = (
                     supabase_client.table("samples")
-                    .select("active_window")
+                    .select("active_window,duration_seconds")
                     .gte("timestamp", day_start.isoformat())
                     .lt("timestamp", day_end.isoformat())
                     .order("id", desc=False)
@@ -304,10 +310,13 @@ def get_dashboard_data(device_id=None):
 
                 offset += batch_size
 
-            from collections import Counter
-            counts = Counter(row.get("active_window") for row in all_rows)
-            return [{"active_window": window, "samples": count}
-                    for window, count in counts.most_common()]
+            from collections import defaultdict
+            totals = defaultdict(int)
+            for row in all_rows:
+                window = row.get("active_window")
+                totals[window] += row.get("duration_seconds") or 5
+            return [{"active_window": w, "total_seconds": s}
+                    for w, s in sorted(totals.items(), key=lambda x: -x[1])]
         except Exception as e:
             print(f"[ERROR] supabase get_dashboard_data: {e}")
             return []
@@ -316,22 +325,24 @@ def get_dashboard_data(device_id=None):
             cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             if device_id:
                 cursor.execute("""
-                    SELECT active_window, COUNT(*) as samples
+                    SELECT active_window,
+                           SUM(COALESCE(duration_seconds, 5)) AS total_seconds
                     FROM samples
                     WHERE device_id = %s
                       AND timestamp >= %s
                       AND timestamp < %s
                     GROUP BY active_window
-                    ORDER BY samples DESC
+                    ORDER BY total_seconds DESC
                 """, (device_id, day_start, day_end))
             else:
                 cursor.execute("""
-                    SELECT active_window, COUNT(*) as samples
+                    SELECT active_window,
+                           SUM(COALESCE(duration_seconds, 5)) AS total_seconds
                     FROM samples
                     WHERE timestamp >= %s
                       AND timestamp < %s
                     GROUP BY active_window
-                    ORDER BY samples DESC
+                    ORDER BY total_seconds DESC
                 """, (day_start, day_end))
             rows = cursor.fetchall()
             cursor.close()

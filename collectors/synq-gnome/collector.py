@@ -1,6 +1,7 @@
 import os
 import uuid
 import requests
+from datetime import datetime
 from gi.repository import GLib, Gio
 
 DBUS_NAME    = 'io.github.Synq.GnomeExtension'
@@ -72,38 +73,57 @@ def _register_device(device_id):
     except Exception as e:
         print(f'[WARN] registration failed: {e}, continuing with cached id')
 
-def _post_sample(device_id, title, timestamp):
+def _parse_iso(ts):
     """
-    posts one focus-change event to the Synq server via POST /collect.
+    parses an ISO 8601 timestamp string into a timezone-aware datetime.
+    handles the Z suffix by replacing it with +00:00 for fromisoformat compat.
 
     inputs:
-        device_id (str) UUID v4, exactly 36 chars
-        title     (str) raw window title, unbounded length
-        timestamp (str) ISO 8601 datetime string
+        ts (str) ISO 8601 datetime string, unbounded length
+
+    returns:
+        datetime.datetime, timezone-aware
+    """
+    return datetime.fromisoformat(ts.replace('Z', '+00:00'))
+
+def _post_sample(device_id, title, timestamp, duration_seconds):
+    """
+    posts one completed window session to the Synq server via POST /collect.
+
+    inputs:
+        device_id        (str) UUID v4, exactly 36 chars
+        title            (str) raw window title, unbounded length
+        timestamp        (str) ISO 8601 datetime string marking session start
+        duration_seconds (int or None) session length in whole seconds; None if unknown
 
     returns:
         None
     """
+    payload = {
+        'device_id':     device_id,
+        'timestamp':     timestamp,
+        'active_window': title
+    }
+    if duration_seconds is not None:
+        payload['duration_seconds'] = duration_seconds
     try:
-        r = requests.post(f'{ENDPOINT}/collect', json={
-            'device_id':     device_id,
-            'timestamp':     timestamp,
-            'active_window': title
-        }, timeout=5)
-        if r.ok:
-            print(f'[INFO] collected: {title[:60]}')
-        else:
+        r = requests.post(f'{ENDPOINT}/collect', json=payload, timeout=5)
+        if not r.ok:
             print(f'[ERROR] /collect returned {r.status_code}: {r.text[:120]}')
+        elif os.environ.get('SYNQ_VERBOSE'):
+            dur_str = f'{duration_seconds}s' if duration_seconds is not None else 'unknown duration'
+            print(f'[DEBUG] collected: {title[:60]} ({dur_str})')
     except Exception as e:
         print(f'[ERROR] /collect failed: {e}')
 
 def main():
     """
     entry point: reads device id, subscribes to the synq-gnome DBus signal,
-    and forwards each WindowChanged event to the Synq server.
+    and forwards each completed window session to the Synq server.
+    each sample is posted when the NEXT focus change fires so duration is known.
 
     inputs:
-        none (reads SYNQ_ENDPOINT from environment)
+        none (reads SYNQ_ENDPOINT and SYNQ_VERBOSE from environment)
 
     returns:
         None (runs until interrupted)
@@ -113,11 +133,31 @@ def main():
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 
+    prev_title = None
+    prev_ts    = None
+
     def on_window_changed(conn, sender, path, iface, signal, params, *_):
+        nonlocal prev_title, prev_ts
         title, timestamp = params.unpack()
+
         if title == IDLE_SENTINEL:
+            if prev_title is not None:
+                _post_sample(device_id, prev_title, prev_ts, None)
+            prev_title = None
+            prev_ts    = None
             return
-        _post_sample(device_id, title, timestamp)
+
+        if prev_title is not None:
+            try:
+                duration_seconds = max(0, int(
+                    (_parse_iso(timestamp) - _parse_iso(prev_ts)).total_seconds()
+                ))
+            except Exception:
+                duration_seconds = None
+            _post_sample(device_id, prev_title, prev_ts, duration_seconds)
+
+        prev_title = title
+        prev_ts    = timestamp
 
     sub_id = bus.signal_subscribe(
         None,
