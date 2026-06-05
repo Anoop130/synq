@@ -28,6 +28,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      - BACKEND_TYPE=postgresql
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DB=synq
